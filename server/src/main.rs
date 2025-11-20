@@ -1,4 +1,9 @@
-use server::config::config_loader;
+use std::sync::Arc;
+
+use server::{
+    config::config_loader,
+    infrastructure::{database::postgresql_connection, http::http_serv::start},
+};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -7,7 +12,7 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let _dotenvy_env = match config_loader::load() {
+    let dotenvy_env = match config_loader::load() {
         Ok(env) => env,
         Err(e) => {
             error!("Failed to load ENV: {}", e);
@@ -16,6 +21,18 @@ async fn main() {
     };
 
     info!(".ENV LOADED");
-}
 
-//todo: next slide 68: https://docs.google.com/presentation/d/1Kwg4lrePjYi_49VfdS7J-zdenaye89Yv-ILbsFv8YOE/edit?slide=id.g38eef0216c6_0_126#slide=id.g38eef0216c6_0_126
+    let postgres_pool = match postgresql_connection::establish_connection(&dotenvy_env.database.url)
+    {
+        Ok(pool) => pool,
+        Err(err) => {
+            error!("Fail to connect: {}", err);
+            std::process::exit(1)
+        }
+    };
+    info!("Connected DB");
+
+    start(Arc::new(dotenvy_env), Arc::new(postgres_pool))
+        .await
+        .expect("Failed to start server");
+}
